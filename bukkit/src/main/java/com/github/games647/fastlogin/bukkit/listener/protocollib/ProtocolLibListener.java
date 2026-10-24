@@ -213,7 +213,27 @@ public class ProtocolLibListener extends PacketAdapter {
 
     private boolean isEaglerXPaperConnection(Player player) {
         Channel channel = ProtocolLibCompat.getChannel(plugin.getLog(), plugin.getCore().isDebug(), player);
-        return channel != null && channel.attr(EAGLER_PIPELINE_DATA).get() != null;
+        if (channel == null) {
+            return false;
+        }
+
+        Object pipelineData = channel.attr(EAGLER_PIPELINE_DATA).get();
+        if (pipelineData == null) {
+            return false;
+        }
+
+        // Do not bypass FastLogin merely because a client uses EaglerXPaper.
+        // Only skip the Java premium handshake after EaglerXPaper has explicitly
+        // enabled its authentication flow for this connection.
+        try {
+            Object authEventEnabled = pipelineData.getClass().getField("authEventEnabled").get(pipelineData);
+            return Boolean.TRUE.equals(authEventEnabled);
+        } catch (ReflectiveOperationException | SecurityException ex) {
+            if (plugin.getCore().isDebug()) {
+                plugin.getLog().info("EaglerXPaper auth state is unavailable; keeping normal FastLogin handling");
+            }
+            return false;
+        }
     }
 
     private @NotNull PacketType getOverriddenType(PacketType packetType) {
