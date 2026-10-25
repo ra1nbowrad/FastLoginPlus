@@ -80,6 +80,10 @@ public class ProtocolLibListener extends PacketAdapter {
 
     private final FastLoginBukkit plugin;
 
+    // EaglerXPaper marks its Netty channels with this attribute. Keep the
+    // integration optional: FastLoginPlus does not depend on EaglerXPaper.
+    private static final AttributeKey<Object> EAGLER_PIPELINE_DATA = AttributeKey.valueOf("$eagler1");
+
     //just create a new once on plugin enable. This used for verify token generation
     private final SecureRandom random = new SecureRandom();
     private final KeyPair keyPair = EncryptionUtil.generateKeyPair();
@@ -137,6 +141,19 @@ public class ProtocolLibListener extends PacketAdapter {
         Player sender = packetEvent.getPlayer();
         PacketType packetType = getOverriddenType(packetEvent.getPacketType());
 
+        // EaglerXPaper performs its own handshake and authentication. Running
+        // FastLogin's Java premium handshake against an Eagler client breaks
+        // existing premium-name accounts (secondAttemptCracked only applies
+        // to the new-player path). Detect the marker on the actual connection
+        // channel and leave these packets entirely to EaglerXPaper.
+        if (isEaglerXPaperConnection(sender)) {
+            if (plugin.getCore().isDebug()) {
+                plugin.getLog().info("Skipping FastLogin packet handling for EaglerXPaper connection {}",
+                        sender.getAddress());
+            }
+            return;
+        }
+
         try {
             if (packetType == START) {
                 if (plugin.getCore().isDebug()) {
@@ -192,6 +209,25 @@ public class ProtocolLibListener extends PacketAdapter {
             plugin.getLog().error("Unexpected error processing packet {}",
                     packetEvent.getPacketType(), unexpectedEx);
         }
+    }
+
+    private boolean isEaglerXPaperConnection(Player player) {
+        Channel channel = ProtocolLibCompat.getChannel(plugin.getLog(), plugin.getCore().isDebug(), player);
+        if (channel == null) {
+            return false;
+        }
+
+        Object pipelineData = channel.attr(EAGLER_PIPELINE_DATA).get();
+        if (pipelineData == null) {
+            return false;
+        }
+
+        // The $eagler1 attribute is installed by EaglerXPaper on its connection
+        // channel. FastLogin's Java premium handshake is incompatible with Eagler's
+        // login protocol, so do not run it for any EaglerXPaper connection. Checking
+        // authEventEnabled here is too late/brittle: the field is connection-state
+        // dependent and can still be false when FastLogin sees the login packet.
+        return true;
     }
 
     private @NotNull PacketType getOverriddenType(PacketType packetType) {
