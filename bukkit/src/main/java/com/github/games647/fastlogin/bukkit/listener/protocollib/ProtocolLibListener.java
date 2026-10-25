@@ -222,18 +222,12 @@ public class ProtocolLibListener extends PacketAdapter {
             return false;
         }
 
-        // Do not bypass FastLogin merely because a client uses EaglerXPaper.
-        // Only skip the Java premium handshake after EaglerXPaper has explicitly
-        // enabled its authentication flow for this connection.
-        try {
-            Object authEventEnabled = pipelineData.getClass().getField("authEventEnabled").get(pipelineData);
-            return Boolean.TRUE.equals(authEventEnabled);
-        } catch (ReflectiveOperationException | SecurityException ex) {
-            if (plugin.getCore().isDebug()) {
-                plugin.getLog().info("EaglerXPaper auth state is unavailable; keeping normal FastLogin handling");
-            }
-            return false;
-        }
+        // The $eagler1 attribute is installed by EaglerXPaper on its connection
+        // channel. FastLogin's Java premium handshake is incompatible with Eagler's
+        // login protocol, so do not run it for any EaglerXPaper connection. Checking
+        // authEventEnabled here is too late/brittle: the field is connection-state
+        // dependent and can still be false when FastLogin sees the login packet.
+        return true;
     }
 
     private @NotNull PacketType getOverriddenType(PacketType packetType) {
